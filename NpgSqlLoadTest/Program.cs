@@ -20,8 +20,10 @@ class Program
 
     static async Task Main()
     {
+        var testId = Guid.NewGuid();
+
         Console.WriteLine(
-            $"{DateTime.Now.ToString("O")} Test started. Total connections: {TotalConnections}. SleepTimeout: {SleepTimeout}");
+            $"{DateTime.Now.ToString("O")} Test with Id = {testId} started. Total connections: {TotalConnections}. SleepTimeout: {SleepTimeout}");
 
         // Настройка ActionBlock с контролем параллелизма
         var options = new ExecutionDataflowBlockOptions
@@ -29,11 +31,11 @@ class Program
             MaxDegreeOfParallelism = Parallelism // Ограничение параллельных задач [[3]]
         };
 
-        var actionBlock = new ActionBlock<int>(async _ =>
+        var actionBlock = new ActionBlock<int>(async i =>
         {
             try
             {
-                await TestConnection();
+                await TestConnection(i, testId);
             }
             catch (Exception ex)
             {
@@ -44,7 +46,7 @@ class Program
         var stopwatch = new Stopwatch();
         stopwatch.Start();
         // Запуск итераций
-        for (int i = 0; i < TotalConnections; i++)
+        for (var i = 0; i < TotalConnections; i++)
         {
             actionBlock.Post(i); // Отправка данных в блок [[1]]
         }
@@ -54,9 +56,28 @@ class Program
 
         stopwatch.Stop();
         Console.WriteLine($"{DateTime.Now.ToString("O")} Test completed in {stopwatch.ElapsedMilliseconds} ms.");
+
+        var rowsCount = await CheckRowsCount(testId);
+        
+        Console.WriteLine($"{DateTime.Now.ToString("O")} Test {testId} added {rowsCount} rows. Total connections: {TotalConnections}");
     }
 
-    static async Task TestConnection()
+    private static async Task<int> CheckRowsCount(Guid testId)
+    {
+        using (var conn = new NpgsqlConnection(ConnectionString))
+        {
+            conn.Open();
+            using (var cmd = new NpgsqlCommand(
+                       $"SELECT COUNT(*) FROM test WHERE testid = @testid",
+                       conn))
+            {
+                cmd.Parameters.AddWithValue("testid", testId); // Безопасная передача значения [[1]]
+                return Convert.ToInt32(await cmd.ExecuteScalarAsync());
+            }
+        }
+    }
+
+    static async Task TestConnection(int i, Guid testId)
     {
         try
         {
@@ -69,12 +90,16 @@ class Program
                     //cmd.CommandTimeout = tm;
                     await cmd.ExecuteNonQueryAsync();
                 }
+
                 using (var cmd = new NpgsqlCommand(
-                           "INSERT INTO test (testvalue) VALUES (@param1)", 
+                           "INSERT INTO test (testvalue, datevalue, testid) VALUES (@testvalue, @datevalue, @testid)",
                            conn))
                 {
+                    var dateTime = DateTime.Now;
                     // Добавление параметров
-                    cmd.Parameters.AddWithValue("param1", $"TimeStamp = {DateTime.Now.ToString("O")}");
+                    cmd.Parameters.AddWithValue("testvalue", $"index = {i}, TS = {dateTime.ToString("O")}");
+                    cmd.Parameters.AddWithValue("datevalue", dateTime);
+                    cmd.Parameters.AddWithValue("testid", testId);
                     // Выполнение запроса
                     await cmd.ExecuteNonQueryAsync();
                 }
