@@ -16,7 +16,7 @@ services:
       - "-c"
       - "shared_buffers=1GB"
       - "-c"
-      - "client_connection_check_interval=300s"  # САМАЯ ВАЖНАЯ ОПЦИЯ для KeepAlive, доступная с Postgres 14
+      - "client_connection_check_interval=2s"  # САМАЯ ВАЖНАЯ ОПЦИЯ для отмены долгих запросов, которые уже не ждет клиент(то есть клиент отключился). Доступна с Postgres 14
       - "-c"
       - "tcp_user_timeout=0"
       - "-c"
